@@ -30,3 +30,11 @@ distributions {
         }
     }
 }
+
+artifactory{
+  url = "${artifactory_contextUrl}" //the url of artifactory
+  repository "generic-release"
+  folder "ict/udocker"
+  username = "${artifactory_user}" //the user to authenticate with. Property should be located in your private gradle properties file
+  password = "${artifactory_password}" //password of the user. Property should be located in your private gradle properties file
+}
