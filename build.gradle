@@ -1,46 +1,32 @@
-apply plugin: 'cpp'
-
-model {
-    buildTypes {
-        debug
-        release
-    }
-    
-    platforms {
-        x86 {
-            architecture "x86"
-        }
-        x64 {
-            architecture "x86_64"
-        }
-        itanium {
-            architecture "ia-64"
-        }
-    }
-	
-    flavors {
-        community
-        enterprise
-    }
-
-    components {
- 	hello(NativeLibrarySpec) {
-		binaries.all {
-			if (flavor == flavors.enterprise) {
-				cppCompiler.define "ENTERPRISE"
-			}
-		}
-	}
-        main(NativeExecutableSpec) {
-        	binaries.all {
-                	lib library: "hello"
-
-		}
-	}
-    }
+plugins {
+  id "c"
+  id "distribution"
+  id "gov.loc.repository.simple-artifact-uploader" version "1.1.0"
 }
 
+version = '1.2'
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '2.7'
+model {
+    components {
+        udocker(NativeExecutableSpec) {}
+	  }
+}
+
+task packageZip(type: Zip) {
+    from 'build.gradle'
+    from 'src/dist'
+    from 'build/exe'
+    destinationDir buildDir
+}
+
+artifacts {
+    archives packageZip
+}
+
+distributions {
+    main {
+        contents {
+            from { packageZip }
+        }
+    }
 }
