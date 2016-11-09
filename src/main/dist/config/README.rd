@@ -1,1 +1,0 @@
-Udocker Distribution README file.

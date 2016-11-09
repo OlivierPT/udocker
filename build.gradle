@@ -1,10 +1,25 @@
 plugins {
   id "c"
   id "distribution"
-  id "gov.loc.repository.simple-artifact-uploader" version "1.1.0"
+  id "ivy-publish"
 }
 
-version = '1.2'
+version = "1.2"
+group = "com.airbus.ict"
+
+// Specific variables
+def snapshotSuffixe = "-build-${getDate()}"
+def releaseSuffixe = "-r1"
+def os = "RedHatEL-7"
+def architecture = "x86_64"
+
+
+def getDate() {
+    def date = new Date()
+    def formattedDate = date.format('yyyyMMddHHmmss')
+    return formattedDate
+}
+
 
 model {
     components {
@@ -12,29 +27,134 @@ model {
 	  }
 }
 
-task packageZip(type: Zip) {
-    from 'build.gradle'
-    from 'src/dist'
-    from 'build/exe'
-    destinationDir buildDir
+task prepareGisehDist(type: Copy) {
+	into "$buildDir/$project.name"
+  from('.') {
+    exclude 'build', '.gradle'
+  }
 }
 
-artifacts {
-    archives packageZip
+task includeBinaries(type: Copy) {
+  into "$buildDir/$project.name/src/app/bin"
+  from "$buildDir/exe/udocker"
 }
 
-distributions {
-    main {
-        contents {
-            from { packageZip }
-        }
+prepareGisehDist.finalizedBy includeBinaries
+
+
+task installSharedDependenciesDev << {
+  configurations.shared.files.each { file ->
+    copy {
+      from zipTree(file)
+      into "$installDevDirectory/$project.name/$version/deps"
+    }
+  }
+}
+
+
+/**
+* Installation on the GISEH code-share
+*/
+task installGisehPackage(dependsOn: ['installApp', 'installCDTNG', 'fixeFilePermissions']) << {
+  println "Package installation..."
+}
+
+task installApp(type: Copy) {
+  into "$targetInstallPath/$project.name/$version/$os/$architecture"
+  from "$buildDir/$project.name/src/app"
+}
+
+task installCDTNG(type: Copy) {
+  into "$targetInstallPath/$project.name/$version/$os/$architecture"
+  from "$buildDir/$project.name/src/conf"
+}
+
+task fixeFilePermissions(type: Exec) {
+    commandLine 'chmod', '-R', '755', "$targetInstallPath/$project.name/$version"
+}
+
+fixeFilePermissions.mustRunAfter installCDTNG, installApp
+
+
+tasks.addRule("Giseh Task rules") {
+    project.tasks.each { curTask ->
+      if (curTask.name.equals("gisehDistZip")) {
+        println "Rule for $curTask.name"
+        curTask.dependsOn prepareGisehDist
+      }
+
+      if (curTask.name.startsWith("installGiseh")) {
+        println "Rule for $curTask.name"
+        curTask.dependsOn gisehDistZip
+        //curTask.finalizedBy installSharedDependencies
+      }
+
     }
 }
 
-artifactory{
-  url = "${artifactory_contextUrl}" //the url of artifactory
-  repository "generic-release"
-  folder "ict/udocker"
-  username = "${artifactory_user}" //the user to authenticate with. Property should be located in your private gradle properties file
-  password = "${artifactory_password}" //password of the user. Property should be located in your private gradle properties file
+distributions {
+    giseh {
+      contents {
+        from "$buildDir/$project.name"
+      }
+    }
+}
+
+configurations {
+    shared {
+        description = 'Shared dependencies configuration'
+        transitive = true
+    }
+    provided {
+      description = 'Porvided locally dependencies configuration'
+      transitive = true
+    }
+}
+
+dependencies {
+    shared (group: 'com.oracle', name: 'jre', version: '1.8.0_101', ext: 'zip')
+    provided (group: 'com.collabnet', name: 'events', version: '1.2.0')
+}
+
+publishing {
+    publications {
+        giseh(IvyPublication) {
+          artifact(gisehDistZip) {
+    		      type "binary"
+    	    }
+          /*
+          descriptor.withXml {
+            configurations.shared.dependencies.each { dep ->
+              asNode().dependencies[0].appendNode('description',
+                                        'A demonstration of ivy descriptor customization')
+                                      }
+          }
+          */
+          descriptor.withXml {
+            project.configurations.shared.dependencies.each { dep ->
+              asNode().dependencies[0].appendNode("dependency name=\"$dep.name\" rev=\"$dep.version\" org=\"$dep.group\"")
+                                      }
+            project.configurations.provided.dependencies.each { dep ->
+              asNode().dependencies[0].appendNode("dependency name=\"$dep.name\" rev=\"$dep.version\" org=\"$dep.group\"")
+                                      }
+          }
+        }
+    }
+    repositories {
+        ivy {
+            // change to point to your repo, e.g. http://my.org/repo
+            //url "$buildDir/repo"
+      	    url "http://localhost:8081/artifactory/ivy-release/"
+      	    credentials {
+                      username = "${artifactory_user}"
+                      password = "${artifactory_password}"
+                  }
+          }
+    }
+}
+
+repositories {
+    ivy {
+        url "http://localhost:8081/artifactory/ivy-release/"
+    }
 }
